@@ -1,0 +1,32 @@
+name: Android
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
+
+      - name: Compile debug Kotlin
+        run: ./gradlew :app:compileDebugKotlin -Pchaquopy.python=$(which python3)

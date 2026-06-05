@@ -1,0 +1,7 @@
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:drawable="@drawable/elephant_logo_home"
+        android:width="42dp"
+        android:height="42dp"
+        android:gravity="center" />
+</layer-list>
