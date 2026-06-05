@@ -115,6 +115,12 @@ def formats(
                     continue
 
                 media_info, _ = _preferred_downloadable_info(info, candidate_url)
+                platform_metadata = _platform_page_metadata(
+                    candidate_url,
+                    attempt_cookie,
+                    referer_header,
+                    user_agent,
+                )
                 formats = _format_options(
                     media_info,
                     candidate_url,
@@ -122,9 +128,11 @@ def formats(
                     audio_format_preference=audio_format_preference,
                     audio_quality_preference=audio_quality_preference,
                 )
+                resolved_title = media_info.get("title") or info.get("title") or "未命名媒体"
+                resolved_thumbnail = _thumbnail_url(media_info, info)
                 result["ok"] = True
-                result["title"] = media_info.get("title") or info.get("title") or "未命名媒体"
-                result["thumbnail"] = _thumbnail_url(media_info, info)
+                result["title"] = _prefer_platform_title(candidate_url, platform_metadata.get("title"), resolved_title)
+                result["thumbnail"] = _prefer_platform_thumbnail(candidate_url, platform_metadata.get("thumbnail"), resolved_thumbnail)
                 result["formats"] = formats
                 return json.dumps(result, ensure_ascii=False)
 
@@ -274,7 +282,17 @@ def download(url, output_dir, cancel_path=None, progress_path=None, format_selec
                             continue
 
                         result["ok"] = True
-                        result["title"] = info.get("title") or "未命名媒体"
+                        platform_metadata = _platform_page_metadata(
+                            candidate_url,
+                            attempt_cookie,
+                            referer_header,
+                            user_agent,
+                        )
+                        result["title"] = _prefer_platform_title(
+                            candidate_url,
+                            platform_metadata.get("title"),
+                            info.get("title") or "未命名媒体",
+                        )
                         result["filepath"] = filepath
                         return json.dumps(result, ensure_ascii=False)
                 finally:
@@ -588,6 +606,175 @@ def _threads_thumbnail_from_page(page):
             if value.startswith("http://") or value.startswith("https://"):
                 return _prefer_https_thumbnail(value)
     return ""
+
+
+def _platform_page_metadata(url, cookie_header="", referer_header="", user_agent=""):
+    if _is_xiaohongshu_url(url):
+        return _xiaohongshu_page_metadata(url, cookie_header, referer_header, user_agent)
+    return {}
+
+
+def _prefer_platform_title(url, platform_title, fallback_title):
+    fallback = (fallback_title or "").strip()
+    title = (platform_title or "").strip()
+    if not _is_xiaohongshu_url(url):
+        return fallback
+    if title and (not fallback or _is_generic_xiaohongshu_title(fallback)):
+        return title
+    return fallback or title
+
+
+def _prefer_platform_thumbnail(url, platform_thumbnail, fallback_thumbnail):
+    thumbnail = (platform_thumbnail or "").strip()
+    fallback = (fallback_thumbnail or "").strip()
+    if _is_xiaohongshu_url(url) and thumbnail:
+        return thumbnail
+    return fallback or thumbnail
+
+
+def _xiaohongshu_page_metadata(url, cookie_header="", referer_header="", user_agent=""):
+    result = {"title": "", "thumbnail": ""}
+    try:
+        headers = _http_headers(
+            url,
+            cookie_header=cookie_header,
+            referer_header=referer_header,
+            user_agent=user_agent,
+        )
+        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        if cookie_header and not cookie_header.lstrip().startswith("# Netscape HTTP Cookie File"):
+            headers["Cookie"] = " ".join(cookie_header.replace("\n", " ").split())
+        request = Request(url, headers=headers)
+        with urlopen(request, timeout=12) as response:
+            raw = response.read(4 * 1024 * 1024)
+            page = raw.decode(response.headers.get_content_charset() or "utf-8", errors="ignore")
+    except Exception:
+        return result
+
+    normalized = _decode_html_json_escapes(page)
+    result["title"] = _xiaohongshu_title_from_page(normalized)
+    result["thumbnail"] = _xiaohongshu_thumbnail_from_page(normalized)
+    return result
+
+
+def _xiaohongshu_title_from_page(page):
+    candidates = []
+    for pattern in (
+        r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+name=["\']twitter:title["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<title[^>]*>(.*?)</title>',
+        r'"displayTitle"\s*:\s*"((?:\\.|[^"\\]){1,500})"',
+        r'"title"\s*:\s*"((?:\\.|[^"\\]){1,500})"',
+        r'"desc"\s*:\s*"((?:\\.|[^"\\]){1,500})"',
+    ):
+        for match in re.finditer(pattern, page, flags=re.IGNORECASE | re.DOTALL):
+            value = _clean_xiaohongshu_title(_decode_jsonish_string(match.group(1)))
+            if value and value not in candidates:
+                candidates.append(value)
+
+    candidates.sort(key=_xiaohongshu_title_score, reverse=True)
+    return candidates[0] if candidates else ""
+
+
+def _xiaohongshu_thumbnail_from_page(page):
+    candidates = []
+    for pattern in (
+        r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']',
+        r'"(?:urlDefault|urlPre|url|image|cover)"\s*:\s*"((?:https?:)?//(?:[^"\\]|\\.)+)"',
+        r'(https?://[^"\'<>\s]+(?:xhscdn|sns-webpic|sns-img)[^"\'<>\s]+)',
+    ):
+        for match in re.finditer(pattern, page, flags=re.IGNORECASE):
+            value = _decode_jsonish_string(match.group(1)).strip()
+            if value.startswith("//"):
+                value = "https:" + value
+            if not value.startswith(("http://", "https://")):
+                continue
+            value = _prefer_https_thumbnail(value)
+            if value not in candidates and _xiaohongshu_image_score(value) > -100:
+                candidates.append(value)
+    candidates.sort(key=_xiaohongshu_image_score, reverse=True)
+    return candidates[0] if candidates else ""
+
+
+def _decode_html_json_escapes(text):
+    value = html.unescape(text or "")
+    value = value.replace("\\/", "/")
+    value = re.sub(
+        r"\\u([0-9a-fA-F]{4})",
+        lambda match: chr(int(match.group(1), 16)),
+        value,
+    )
+    return value
+
+
+def _decode_jsonish_string(value):
+    raw = html.unescape(value or "")
+    try:
+        return json.loads(f'"{raw}"')
+    except Exception:
+        return _decode_html_json_escapes(raw)
+
+
+def _clean_xiaohongshu_title(title):
+    value = re.sub(r"\s+", " ", title or "").strip()
+    value = re.sub(r"\s*[-_|]\s*(小红书|REDnote)\s*$", "", value, flags=re.IGNORECASE).strip()
+    value = re.sub(r"^小红书\s*[-_|]\s*", "", value).strip()
+    if not value:
+        return ""
+    if value.startswith(("http://", "https://")):
+        return ""
+    if _is_generic_xiaohongshu_title(value):
+        return ""
+    return value[:180]
+
+
+def _is_generic_xiaohongshu_title(title):
+    value = (title or "").strip().lower()
+    if not value:
+        return True
+    generic = {
+        "小红书",
+        "rednote",
+        "xiaohongshu",
+        "xiaohongshu video",
+        "未命名媒体",
+        "媒体文件",
+    }
+    if value in generic:
+        return True
+    return bool(re.match(r"^xiaohongshu video\s+#?[0-9a-f]{8,}", value))
+
+
+def _xiaohongshu_title_score(title):
+    value = title or ""
+    score = min(len(value), 120)
+    if re.search(r"[\u4e00-\u9fff]", value):
+        score += 40
+    if "#" in value:
+        score -= 8
+    return score
+
+
+def _xiaohongshu_image_score(url):
+    value = (url or "").lower()
+    score = 0
+    if "sns-webpic" in value or "sns-img" in value or "xhscdn" in value:
+        score += 80
+    if "avatar" in value or "icon" in value or "profile" in value:
+        score -= 180
+    if "imageview2" in value:
+        score += 20
+    widths = [int(item) for item in re.findall(r"(?:/w/|[?&]w=|imageview2/\d+/w/)(\d{2,4})", value)]
+    heights = [int(item) for item in re.findall(r"(?:/h/|[?&]h=|imageview2/\d+/h/)(\d{2,4})", value)]
+    if widths:
+        score += max(widths)
+    if heights:
+        score += max(heights)
+    if not widths and not heights:
+        score += min(len(value), 240)
+    return score
 
 
 def _threads_media_urls_from_page(page):

@@ -521,6 +521,8 @@ fun MediaDownloaderApp(
         retainedPlayerTask != null -> PlayerTransitionPhase.Exiting
         else -> PlayerTransitionPhase.Idle
     }
+    val playerOverlayComposed = state.playerTask != null || retainedPlayerTask != null
+    val playerSharedElementVisible = state.playerTask != null
 
     val currentPlayerTask = state.playerTask
     if (currentPlayerTask != null) {
@@ -811,7 +813,7 @@ fun MediaDownloaderApp(
         }
 
         AnimatedVisibility(
-            visible = playerVisible,
+            visible = playerOverlayComposed,
             enter = fadeIn(tween(120)),
             exit = fadeOut(tween(160)),
             modifier = Modifier.fillMaxSize()
@@ -821,7 +823,7 @@ fun MediaDownloaderApp(
                     task = task,
                     sharedTransitionScope = this@SharedTransitionLayout,
                     animatedVisibilityScope = this,
-                    sharedElementVisible = playerVisible,
+                    sharedElementVisible = playerSharedElementVisible,
                     transitionPhase = playerTransitionPhase,
                     onBack = viewModel::closePlayer,
                     onShare = { viewModel.openShareMenu(task) },
