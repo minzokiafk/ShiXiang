@@ -6,6 +6,22 @@
 
 > 本项目只用于下载你有权访问和保存的内容。使用者需要自行遵守目标网站服务条款、版权规则和所在地法律。
 
+## 截图
+
+<p>
+  <img src="docs/screenshots/01-splash.jpg" width="180" alt="拾象启动页" />
+  <img src="docs/screenshots/03-home-empty.jpg" width="180" alt="首页粘贴链接" />
+  <img src="docs/screenshots/04-format-picker.jpg" width="180" alt="选择下载版本" />
+  <img src="docs/screenshots/06-download-progress.jpg" width="180" alt="下载进度" />
+</p>
+
+<p>
+  <img src="docs/screenshots/08-library-list.jpg" width="180" alt="媒体库列表" />
+  <img src="docs/screenshots/05-share-actions.jpg" width="180" alt="分享与本地操作" />
+  <img src="docs/screenshots/07-batch-manage.jpg" width="180" alt="批量管理" />
+  <img src="docs/screenshots/02-library-empty.jpg" width="180" alt="空媒体库" />
+</p>
+
 ## 功能
 
 - 从 Android 分享菜单接收文本链接。
@@ -15,6 +31,32 @@
 - 支持保存到系统相册、系统分享、外部应用打开。
 - 针对需要登录态或页面播放捕获的场景，提供内置 WebView 辅助流程。
 - Cookie、下载历史和媒体文件保存在设备本地。
+
+## 功能说明
+
+### 链接识别
+
+首页支持从其他应用分享链接，也可以直接粘贴 URL。应用会识别来源平台，并尝试解析标题、封面、时长、清晰度和文件体积等信息。
+
+### 清晰度选择
+
+解析完成后，拾象会展示可下载版本。你可以在不同清晰度和文件大小之间选择，再开始下载。
+
+### 下载任务
+
+下载过程在应用内显示实时进度、速度、已下载体积和总大小，并通过后台服务保持任务运行。失败时会尽量给出更具体的原因。
+
+### 媒体库
+
+下载完成的文件会进入本地媒体库，按卡片展示封面、清晰度、来源平台、时间和时长，方便回看、查找和继续操作。
+
+### 分享与本地操作
+
+媒体文件可以保存到系统相册、调用系统分享、用外部应用打开，也可以直接分享到常用应用。
+
+### 批量管理
+
+媒体库支持选择多个文件并批量删除，适合定期清理本地下载内容。
 
 ## 支持范围
 
